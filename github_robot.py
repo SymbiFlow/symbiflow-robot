@@ -4,7 +4,6 @@ import os
 import re
 import sys
 
-from tqdm import tqdm
 from github3 import login
 from github3.repos.status import Status
 
