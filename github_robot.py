@@ -100,18 +100,20 @@ def manage_dependabot_pull_requests():
             states = {'success': 0, 'pending': 0}
             for s in sorted(statuses):
                 d = statuses[s]
-                info(f'#{issue.number} ({issue.title}) - {d.state:10s} {s:60s} {d.creator}')
 
+                info(f'#{issue.number} ({issue.title}) - {d.state:10s} {s:60s} {d.creator}')
                 if d.state not in states:
                     states[d.state] = 0
                 states[d.state] += 1
 
                 u = d.creator.login
+                if u == 'symbiflow-robot':
+                    u = 'kokoro-team'
                 if u not in users:
                     users[u] = 0
                 users[u] += 1
 
-                if d.state == 'failure':
+                if d.state in ('failure', 'error'):
                     if u not in failures_for_user:
                         failures_for_user[u] = 0
                     failures_for_user[u] += 1
@@ -124,7 +126,7 @@ def manage_dependabot_pull_requests():
                 info(f"#{issue.number} ({issue.title}) - {states['pending']} pending CI jobs")
 
             # If there are any kokoro failures, retry.
-            elif failures_for_user['kokoro-team'] > 0:
+            elif failures_for_user['kokoro-team'] > 0 or users['kokoro-team'] == 0:
                 attempts = f" ({kokoro_label_events['labeled']} of {MAX_KOKORO_RETRIES}.)"
                 if kokoro_label_events['labeled'] < MAX_KOKORO_RETRIES:
                     info(f"#{issue.number} ({issue.title}) - Retrying Kokoro" +attempts)
