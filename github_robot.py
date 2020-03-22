@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import sys
+import traceback
 
 from github3 import login
 from github3.repos.status import Status
@@ -58,6 +59,78 @@ def count_kokoro_label_events(label_events):
 MAX_KOKORO_RETRIES = 3
 
 
+def update_issue(client, issue):
+    info = logger.info
+    debug = logger.debug
+
+    if issue.user.login != "dependabot-preview[bot]":
+        return
+    info(f'#{issue.number} ({issue.title}).')
+    ev = label_events(issue)
+
+    # If the PR has never had the kokoro:force-run label before, add it.
+    kokoro_label_events = count_kokoro_label_events(ev)
+    if kokoro_label_events['labeled'] == 0:
+        info(f'#{issue.number} ({issue.title}) - Adding first kokoro:force-run.')
+        issue.add_labels('kokoro:force-run')
+        return
+
+    # Get the status associated with the pull request
+    pr = issue.pull_request()
+    sraw = client.session.get(pr.statuses_url)
+    status_events = list(reversed([Status(j, client.session) for j in sraw.json()]))
+    statuses = {}
+    for s in status_events:
+        if s.context in statuses:
+            if s.updated_at < statuses[s.context].updated_at:
+                return
+        statuses[s.context] = s
+
+    users = {'kokoro-team': 0}
+    failures_for_user = {'kokoro-team': 0}
+    states = {'success': 0, 'pending': 0}
+    for s in sorted(statuses):
+        d = statuses[s]
+
+        info(f'#{issue.number} ({issue.title}) - {d.state:10s} {s:60s} {d.creator}')
+        if d.state not in states:
+            states[d.state] = 0
+        states[d.state] += 1
+
+        u = d.creator.login
+        if u == 'symbiflow-robot':
+            u = 'kokoro-team'
+        if u not in users:
+            users[u] = 0
+        users[u] += 1
+
+        if d.state in ('failure', 'error'):
+            if u not in failures_for_user:
+                failures_for_user[u] = 0
+            failures_for_user[u] += 1
+
+    if 'kokoro-team' not in users:
+        info(f'#{issue.number} ({issue.title}) - Skipping as no kokoro CI runs!')
+
+    # Are we waiting on anything to finish?
+    elif states['pending'] > 0:
+        info(f"#{issue.number} ({issue.title}) - {states['pending']} pending CI jobs")
+
+    # If there are any kokoro failures, retry.
+    elif failures_for_user['kokoro-team'] > 0 or users['kokoro-team'] == 0:
+        attempts = f" ({kokoro_label_events['labeled']} of {MAX_KOKORO_RETRIES}.)"
+        if kokoro_label_events['labeled'] < MAX_KOKORO_RETRIES:
+            info(f"#{issue.number} ({issue.title}) - Retrying Kokoro" +attempts)
+            issue.add_labels('kokoro:force-run')
+        else:
+            info(f"#{issue.number} ({issue.title}) - Too many Kokoro failures!"+attempts)
+
+    # If all the checks where successful, then auto-merge!
+    elif states['success'] == len(statuses):
+        info(f'#{issue.number} ({issue.title}) - Merging as all statuses are good!')
+        pr.merge()
+
+
 def manage_dependabot_pull_requests():
     client = login(token=GITHUB_API_TOKEN)
     organization = client.organization(ORGANIZATION)
@@ -72,72 +145,10 @@ def manage_dependabot_pull_requests():
 
         info(f"Getting all PRs in {repository.full_name}...")
         for issue in issues_that_are_prs:
-            if issue.user.login != "dependabot-preview[bot]":
-                continue
-            info(f'#{issue.number} ({issue.title}).')
-            ev = label_events(issue)
-
-            # If the PR has never had the kokoro:force-run label before, add it.
-            kokoro_label_events = count_kokoro_label_events(ev)
-            if kokoro_label_events['labeled'] == 0:
-                info(f'#{issue.number} ({issue.title}) - Adding first kokoro:force-run.')
-                issue.add_labels('kokoro:force-run')
-                continue
-
-            # Get the status associated with the pull request
-            pr = issue.pull_request()
-            sraw = client.session.get(pr.statuses_url)
-            status_events = list(reversed([Status(j, client.session) for j in sraw.json()]))
-            statuses = {}
-            for s in status_events:
-                if s.context in statuses:
-                    if s.updated_at < statuses[s.context].updated_at:
-                        continue
-                statuses[s.context] = s
-
-            users = {'kokoro-team': 0}
-            failures_for_user = {'kokoro-team': 0}
-            states = {'success': 0, 'pending': 0}
-            for s in sorted(statuses):
-                d = statuses[s]
-
-                info(f'#{issue.number} ({issue.title}) - {d.state:10s} {s:60s} {d.creator}')
-                if d.state not in states:
-                    states[d.state] = 0
-                states[d.state] += 1
-
-                u = d.creator.login
-                if u == 'symbiflow-robot':
-                    u = 'kokoro-team'
-                if u not in users:
-                    users[u] = 0
-                users[u] += 1
-
-                if d.state in ('failure', 'error'):
-                    if u not in failures_for_user:
-                        failures_for_user[u] = 0
-                    failures_for_user[u] += 1
-
-            if 'kokoro-team' not in users:
-                info(f'#{issue.number} ({issue.title}) - Skipping as no kokoro CI runs!')
-
-            # Are we waiting on anything to finish?
-            elif states['pending'] > 0:
-                info(f"#{issue.number} ({issue.title}) - {states['pending']} pending CI jobs")
-
-            # If there are any kokoro failures, retry.
-            elif failures_for_user['kokoro-team'] > 0 or users['kokoro-team'] == 0:
-                attempts = f" ({kokoro_label_events['labeled']} of {MAX_KOKORO_RETRIES}.)"
-                if kokoro_label_events['labeled'] < MAX_KOKORO_RETRIES:
-                    info(f"#{issue.number} ({issue.title}) - Retrying Kokoro" +attempts)
-                    issue.add_labels('kokoro:force-run')
-                else:
-                    info(f"#{issue.number} ({issue.title}) - Too many Kokoro failures!"+attempts)
-
-            # If all the checks where successful, then auto-merge!
-            elif states['success'] == len(statuses):
-                info(f'#{issue.number} ({issue.title}) - Merging as all statuses are good!')
-                pr.merge()
+            try:
+                update_issue(client, issue)
+            except Exception as e:
+                traceback.print_tb()
 
 
 if __name__ == '__main__':
