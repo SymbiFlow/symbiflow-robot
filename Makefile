@@ -11,4 +11,4 @@ update:
 	git pull
 
 run:
-	source venv/bin/activate; python github_robot.py
+	source venv/bin/activate; python robot_merge_if_green.py
