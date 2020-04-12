@@ -148,7 +148,7 @@ def manage_dependabot_pull_requests():
             try:
                 update_issue(client, issue)
             except Exception as e:
-                traceback.print_tb()
+                traceback.print_exc(file=sys.stdout)
 
 
 if __name__ == '__main__':
