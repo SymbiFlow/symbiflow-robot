@@ -56,6 +56,19 @@ def count_kokoro_label_events(label_events):
     return kokoro
 
 
+def login_is_ci_system(u):
+    if u.login == 'symbiflow-robot':
+        return 'Google Kokoro CI'
+    elif u.login == 'symbiflow-kokoro':
+        return 'Google Kokoro CI'
+    elif u.login == 'kokoro-team':
+        return 'Google Kokoro CI'
+    elif u.login == 'travis-ci':
+        return 'Travis CI'
+
+    return u.login
+
+
 MAX_KOKORO_RETRIES = 3
 
 
@@ -86,20 +99,18 @@ def update_issue(client, issue):
                 return
         statuses[s.context] = s
 
-    users = {'kokoro-team': 0}
-    failures_for_user = {'kokoro-team': 0}
+    users = {'Google Kokoro CI': 0, 'Travis CI': 0}
+    failures_for_user = {'Google Kokoro CI': 0, 'Travis CI': 0}
     states = {'success': 0, 'pending': 0}
     for s in sorted(statuses):
         d = statuses[s]
 
-        info(f'#{issue.number} ({issue.title}) - {d.state:10s} {s:60s} {d.creator}')
+        u = login_is_ci_system(d.creator)
+        info(f'#{issue.number} ({issue.title}) - {d.state:10s} {s:60s} {u}')
         if d.state not in states:
             states[d.state] = 0
         states[d.state] += 1
 
-        u = d.creator.login
-        if u == 'symbiflow-robot':
-            u = 'kokoro-team'
         if u not in users:
             users[u] = 0
         users[u] += 1
@@ -109,7 +120,7 @@ def update_issue(client, issue):
                 failures_for_user[u] = 0
             failures_for_user[u] += 1
 
-    if 'kokoro-team' not in users:
+    if 'Google Kokoro CI' not in users:
         info(f'#{issue.number} ({issue.title}) - Skipping as no kokoro CI runs!')
 
     # Are we waiting on anything to finish?
@@ -117,7 +128,7 @@ def update_issue(client, issue):
         info(f"#{issue.number} ({issue.title}) - {states['pending']} pending CI jobs")
 
     # If there are any kokoro failures, retry.
-    elif failures_for_user['kokoro-team'] > 0 or users['kokoro-team'] == 0:
+    elif failures_for_user['Google Kokoro CI'] > 0 or users['Google Kokoro CI'] == 0:
         attempts = f" ({kokoro_label_events['labeled']} of {MAX_KOKORO_RETRIES}.)"
         if kokoro_label_events['labeled'] < MAX_KOKORO_RETRIES:
             info(f"#{issue.number} ({issue.title}) - Retrying Kokoro" +attempts)
