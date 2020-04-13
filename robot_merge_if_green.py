@@ -76,8 +76,23 @@ def update_issue(client, issue):
     info = logger.info
     debug = logger.debug
 
-    if issue.user.login != "dependabot-preview[bot]":
+    should_run = False
+    if issue.user.login == "dependabot-preview[bot]":
+        should_run = True
+
+    labels = [x.name for x in issue.labels()]
+
+    if "merge-if-green" in labels:
+        should_run = True
+
+    print(issue, issue.user, issue.title, labels)
+
+    if 'DNM' in issue.title:
+        should_run = False
+
+    if not should_run:
         return
+
     info(f'#{issue.number} ({issue.title}).')
     ev = label_events(issue)
 
@@ -152,9 +167,10 @@ def manage_dependabot_pull_requests():
 
     info(f"Getting all repos in {ORGANIZATION}...")
     for repository in repos_iterator:
-        issues_that_are_prs = get_issues_that_are_prs(repository)
-
+        print()
+        print(repository)
         info(f"Getting all PRs in {repository.full_name}...")
+        issues_that_are_prs = get_issues_that_are_prs(repository)
         for issue in issues_that_are_prs:
             try:
                 update_issue(client, issue)
