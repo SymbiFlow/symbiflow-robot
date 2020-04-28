@@ -12,3 +12,6 @@ update:
 
 run:
 	source venv/bin/activate; python robot_merge_if_green.py
+
+maintain-triage:
+	source venv/bin/activate; python maintain-triage.py

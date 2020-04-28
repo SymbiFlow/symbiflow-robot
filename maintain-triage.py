@@ -27,7 +27,7 @@ handler.setLevel(logging.DEBUG)
 logger.addHandler(handler)
 
 
-def manage_dependabot_pull_requests():
+def main():
     client = login(token=GITHUB_API_TOKEN)
     organization = client.organization(ORGANIZATION)
     repos_iterator = organization.repositories()
@@ -74,4 +74,4 @@ Merge pull request if the CI system goes green.""")
 
 
 if __name__ == '__main__':
-    manage_dependabot_pull_requests()
+    main()
