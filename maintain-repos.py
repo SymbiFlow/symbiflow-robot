@@ -71,6 +71,12 @@ def main():
 Merge pull request if the CI system goes green.""")
             except ForbiddenError as e:
                 print(e)
+        if 'kokoro:force-run' not in labels:
+            try:
+                repository.create_label('kokoro:force-run', '#170e6d', """\
+Force the Google Kokoro CI system to run on a pull request.""")
+            except ForbiddenError as e:
+                print(e)
 
 
 if __name__ == '__main__':
